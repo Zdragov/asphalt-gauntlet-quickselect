@@ -1,0 +1,5 @@
+vulcano = vulcanotitanium
+lykan = lykanhypersport
+tachyon = tachyonspeed
+xj220=xj220twr
+nvision=nvision74

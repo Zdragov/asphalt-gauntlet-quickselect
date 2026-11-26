@@ -4,8 +4,25 @@ from difflib import get_close_matches
 import logging
 import mss
 import numpy as np
+import pydirectinput
+
+import time
+import vgamepad as vg
+
 from PIL import Image
 from rapidocr import RapidOCR
+
+_gamepad = vg.VX360Gamepad()   # coonect virtual controller
+
+KEYMAP = {
+    "up":    vg.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_UP,
+    "down":  vg.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_DOWN,
+    "left":  vg.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_LEFT,
+    "right": vg.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_RIGHT,
+    "a":     vg.XUSB_BUTTON.XUSB_GAMEPAD_A,
+    "b":     vg.XUSB_BUTTON.XUSB_GAMEPAD_B,
+}
+
 
 logging.getLogger("RapidOCR").setLevel(logging.WARNING)
 
@@ -16,6 +33,7 @@ with mss.MSS() as sct:
     mon = sct.monitors[MONITOR]
 
 w, h = mon["width"], mon["height"]
+
 REGION = {
     "left":   mon["left"] + int(round(w * 0.072265625)),
     "top":    mon["top"]  + int(round(h * 0.38194444444)),
@@ -25,6 +43,39 @@ REGION = {
 }
 
 engine = RapidOCR()
+
+def mouseClickSClass():
+    pydirectinput.moveTo(int(round(0.8*w)), int(round(0.1458333333*h)))
+    time.sleep(0.1)
+    pydirectinput.mouseDown()
+    time.sleep(0.05)
+    pydirectinput.mouseUp()
+    time.sleep(0.1)
+
+def pressButton(name, delay=0.03):
+    btn = KEYMAP[name]
+    _gamepad.press_button(button=btn)
+    _gamepad.update()
+    time.sleep(0.02)
+    _gamepad.release_button(button=btn)
+    _gamepad.update()
+    time.sleep(delay)
+
+def resetCursorToStart(delay=0.1):
+
+    _gamepad.left_trigger(value=255)
+    _gamepad.update()
+    time.sleep(delay)
+    _gamepad.left_trigger(value=0)
+    _gamepad.update()
+    time.sleep(delay)
+
+    _gamepad.right_trigger(value=255)
+    _gamepad.update()
+    time.sleep(delay)
+    _gamepad.right_trigger(value=0)
+    _gamepad.update()
+    time.sleep(delay)
 
 
 def importPreferences(path="order.txt"):
@@ -76,7 +127,7 @@ def resolveTracks(raw_entries, priorities, cutoff=0.75):
 
     return matched, unmatched
 
-#for now, entirecarlist acts as your garage. implement fallback system later
+#for now, entirecarlist acts as your garage. implement actual system later
 
 def loadEntireCarList():
     entireCarList = []
@@ -101,13 +152,50 @@ def findCarPosInEntireCarList(targetCar, topRow, botRow):
         return (1, botRow.index(key))
     return None
 
+def navigateToCar(currentRow, targetRow, currentCol, targetCol, pressButton):
+    dc = targetCol - currentCol
+    if dc > 0:
+        for _ in range(dc):   pressButton("right")
+    elif dc < 0:
+        for _ in range(-dc):  pressButton("left")
 
+    if targetRow > currentRow:       pressButton("down")
+    elif targetRow < currentRow:     pressButton("up")
+
+
+    
+
+def activateMacro():
+
+    #take screenshot here
+
+    #calculate (while navigating?)
+
+    pressButton("b")       # back
+    time.sleep(2)
+
+    pressButton("down")    # navigate to confirm button
+    time.sleep(2)
+
+    pressButton("a")       # press Confirm opponent
+    time.sleep(2)
+
+    pressButton("a")       # press Select car
+    time.sleep(2)
+
+    #go to S class
+
+    #at this point, in garage menu. find car 1
 
 
 
 
 
 if __name__ == "__main__":
+
+    time.sleep(5) #let the user tab into the game
+    pressButton("b") #exit "controller connected" prompt
+    time.sleep(3) #padding
 
     priorities = importPreferences("order.txt")
 
@@ -117,28 +205,122 @@ if __name__ == "__main__":
     print(f"  topRow ({len(topRow)}): {topRow[:5]}{'...' if len(topRow) > 5 else ''}")
     print(f"  botRow ({len(botRow)}): {botRow[:5]}{'...' if len(botRow) > 5 else ''}")
 
-    a = findCarPosInEntireCarList("ats", topRow, botRow)
-    print(a)
 
 
 
-
-
-
+    #take a photo 
 
     rawEntries = imgToList(captureScreenRegion(REGION))
     rawEntries = rawEntries[:5]
     matched, unmatched = resolveTracks(rawEntries, priorities, cutoff=0.75)
 
-    usedCars = set()  
+    usedCars = set()
+    carsChosen = []
 
+
+
+
+    #calculate
     print("\npicks per track:")
-    for track, cars in matched.items():
-        pick = None
-        for car in cars:
-            if car not in usedCars:
-                pick = car
-                usedCars.add(car)
-                break
-        if pick:
-            print(f"  {track}: {pick}  (order: {' > '.join(cars)})")
+    for track, cars in matched.items(): #find track, then find priority order
+        carPicked = None                #clear selection   
+        for car in cars:                #go through the priority in order
+            if car not in usedCars:     #if this car hasnt been selected yet,
+                carPicked = car         #pick the car
+                usedCars.add(car)       #and add it to the usedCars list
+                break                   #exit inner loop
+        if carPicked:                   #is carPicked is something and not None,
+            carsChosen.append(carPicked)       #add it to the output list
+            print(f"  {track}: {carPicked}  (order: {' > '.join(cars)})")   
+
+
+
+
+    #navigate to car
+
+    """
+    #test function
+    pos = findCarPosInEntireCarList("senna", topRow, botRow)
+    if pos is None:
+        print("target not found in garage list")
+    else:
+        row, col = pos
+        print(f"sf90 → (row={row}, col={col})")
+
+        resetCursorToStart()
+        navigateToCar(row, col, pressButton)
+
+        pressButton("a") #confirm
+        time.sleep(1)
+        pressButton("left") #next track
+        time.sleep(1)
+        pressButton("a") # into garage screen again
+
+        resetCursorToStart()
+        navigateToCar(row, col, pressButton)
+"""
+    
+    #actual function
+
+    carsChosen = ["devel", "sf90", "nevera","lykan","abs"]
+
+    """for i in range(300):
+        pressButton("right")      # go to the right side of car list - S class
+        time.sleep(0.05)
+"""
+
+    match 2: #standard vs advanced
+        case 1:
+            for car in carsChosen:
+                pos = findCarPosInEntireCarList(car, topRow, botRow)
+                if pos is None:
+                    print("target not found in garage list")
+                else:
+                    row, col = pos
+                    print(f"sf90 → (row={row}, col={col})")
+
+                    resetCursorToStart()
+                    navigateToCar(row, col, pressButton)
+
+                match 2: #which option?
+                    case 1:  #actual challenge screen
+                        pressButton("a") #confirm
+                        time.sleep(1)
+                        pressButton("right") #next track
+                        time.sleep(1)
+                        pressButton("a") # into garage screen again
+                    case 2: #garage testing
+                        pressButton("a")
+                        time.sleep(2)
+                        pressButton("b")
+                        time.sleep(2)
+        case 2: #navigate to car (advanced, faster)
+
+            resetCursorToStart()
+            currentRow, currentCol = 0, 0
+
+            for car in carsChosen:
+                pos = findCarPosInEntireCarList(car, topRow, botRow)
+                if pos is None:
+                    print(f"{car} not found in garage list")
+                    continue
+
+                targetRow, targetCol = pos
+                print(f"{car} -> ({targetRow}, {targetCol})  from ({currentRow}, {currentCol})")
+
+                navigateToCar(currentRow, targetRow, currentCol, targetCol, pressButton)
+                currentRow, currentCol = targetRow, targetCol  
+
+                match 2:              
+                    case 1:  # actual challenge screen
+                        pressButton("a")
+                        time.sleep(1)
+                        pressButton("right")
+                        time.sleep(1)
+                        pressButton("a")
+                        # cursor is now on this car in the next track's picker
+                    case 2:  # garage testing
+                        pressButton("a")
+                        time.sleep(2)
+                        pressButton("b")
+                        time.sleep(2)
